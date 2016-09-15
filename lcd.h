@@ -23,7 +23,7 @@ void lcd_Cmd(char a)
     LCD_RS = 0;              // => LCD_RS = 0
     LCD_PORT = a;
     LCD_EN  = 1;             // => E = 1
-    lcd_Delay(5);
+    lcd_Delay(10);
     LCD_EN  = 0;             // => E = 0
 }
 
@@ -32,7 +32,7 @@ void lcd_Write_Data(char c)
     LCD_RS = 1;              // => LCD_RS = 1
     LCD_PORT = c;
     LCD_EN  = 1;             // => E = 1
-    lcd_Delay(5);
+    lcd_Delay(10);
     LCD_EN  = 0;             // => E = 0
 }
 
@@ -60,6 +60,7 @@ void lcd_Init()
 lcd_Clear()
 {
     lcd_Cmd(0x01);
+    lcd_Delay(10);
 }
 
 void lcd_Set_Cursor_Pos(char row, char col)

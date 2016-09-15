@@ -20,19 +20,16 @@ typedef unsigned long uint32;
 typedef unsigned short uint16;
 typedef unsigned char uint8;
 
-static uint16 timer_counter = 0;
+static uint16 timer_scaler = 0;
+static uint16 delay_timer = 0;
 
-void delay(unsigned int ms)
+void delay(uint16 ms)
 {
-    unsigned int i;
-    while (ms--) {
-        for (i = 500; i > 0; i--) {
-            _nop_();
-        }
-    }
+    delay_timer = ms;
+    while (delay_timer);
 }
 
-void lcd_Printf(const char* fmt, ...)
+void lcd_printf(const char* fmt, ...)
 {
     char buffer[17];
     va_list args;
@@ -55,7 +52,7 @@ void display_logo()
     const char code m7[8] = {0x11, 0x03, 0x03, 0x07, 0x07, 0x0F, 0x0F, 0x1F};
     const char code f2[8] = {0x1F, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x01};
     
-    lcd_Clear();
+    //lcd_Clear();
     lcd_Load_Custom_Symbol(0, m1);
     lcd_Load_Custom_Symbol(1, m2);
     lcd_Load_Custom_Symbol(2, m3);
@@ -102,6 +99,13 @@ void main()
     lcd_Init();
     
     display_logo();
+    delay(2000);
+    
+    lcd_Clear();
+    lcd_Set_Cursor_Pos(0, 0);
+    lcd_Write_String("01-01 15-09-2016");
+    lcd_Set_Cursor_Pos(1, 0);
+    lcd_Write_String("Timer:00:12     ");
     
     while (1) {
     }
@@ -111,8 +115,12 @@ void timer0_ISR() interrupt 1
 {
     TL0 = T1MS;
     TH0 = T1MS >> 8;
-    if (timer_counter++ >= 1000) {
-        timer_counter = 0;
+    
+    if (timer_scaler++ >= 1000) {
+        timer_scaler = 0;
         LED_BLINK = !LED_BLINK;
     }
+    
+    if (delay_timer)
+        delay_timer--;
 }
