@@ -36,6 +36,12 @@ void lcd_Write_Data(char c)
     LCD_EN  = 0;             // => E = 0
 }
 
+lcd_Clear()
+{
+    lcd_Cmd(0x01);
+    lcd_Delay(10);
+}
+
 void lcd_Init()
 {
     LCD_PORT = 0x00;
@@ -57,12 +63,6 @@ void lcd_Init()
     lcd_Delay(50);
 }
 
-lcd_Clear()
-{
-    lcd_Cmd(0x01);
-    lcd_Delay(10);
-}
-
 void lcd_Set_Cursor_Pos(char row, char col)
 {
     if (row == 0)
@@ -78,7 +78,7 @@ void lcd_Write_String(char *a)
         lcd_Write_Data(a[i]);
 }
 
-void lcd_Load_Custom_Symbol(unsigned char addr, unsigned char *pattern)
+void lcd_Load_Custom_Symbol(const unsigned char addr, const unsigned char *pattern)
 {
     unsigned char i;
     lcd_Cmd(0x40 + (addr << 3));
