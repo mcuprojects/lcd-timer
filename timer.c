@@ -22,7 +22,8 @@ sbit LCD_RS = P2^0;
 sbit LCD_RW = P3^7;
 sbit LCD_EN = P2^1;
 
-sbit LED_BLINK = P3^1;
+sbit LED_BLINKER = P3^1;
+sbit BUZZER = P3^4;
 
 sbit P2_2 = P2^2;
 sbit P2_3 = P2^3;
@@ -34,6 +35,7 @@ sbit P2_7 = P2^7;
 typedef unsigned long uint32;
 typedef unsigned short uint16;
 typedef unsigned char uint8;
+typedef uint8 bool;
 
 typedef enum {
     UNDEFINED,
@@ -83,7 +85,11 @@ typedef struct timer {
 
 uint16 timer_scaler = 0;
 uint16 delay_timer = 0;
-uint8 scan_keyboard_request = 0;
+uint16 beep_timer = 0;
+bool scan_keyboard_request = 0;
+bool dec_timer_request = 0;
+bool backup_timer_enable = 0;
+uint8 cursor_pos = 0;
 
 state_t state = UNDEFINED;
 key_t key_pressed = NONE;
@@ -132,93 +138,49 @@ void display_logo()
     lcd_Load_Custom_Symbol(7, f2);
     
     lcd_Set_Cursor_Pos(0, 0);
-    lcd_Write_Data(0);
-    lcd_Write_Data(1);
-    lcd_Write_Data(2);
-    lcd_Write_Data(3);
-    lcd_Write_Data(0);
-    lcd_Write_Data(7);
-    lcd_Write_Data(255);
+    lcd_Write_Char(0);
+    lcd_Write_Char(1);
+    lcd_Write_Char(2);
+    lcd_Write_Char(3);
+    lcd_Write_Char(0);
+    lcd_Write_Char(7);
+    lcd_Write_Char(255);
     lcd_Write_String(" MEDICAL ");
     lcd_Set_Cursor_Pos(1, 0);
-    lcd_Write_Data(4);
-    lcd_Write_Data(5);
-    lcd_Write_Data(6);
-    lcd_Write_Data(4);
-    lcd_Write_Data(4);
-    lcd_Write_Data(255);
-    lcd_Write_Data(255);
+    lcd_Write_Char(4);
+    lcd_Write_Char(5);
+    lcd_Write_Char(6);
+    lcd_Write_Char(4);
+    lcd_Write_Char(4);
+    lcd_Write_Char(255);
+    lcd_Write_Char(255);
     lcd_Write_String(" F O R T ");
 }
 
-void update_icon()
-{
-    const char code play[8] = {0x00, 0x10, 0x18, 0x1C, 0x1E, 0x1C, 0x18, 0x10};
-    const char code pause[8] = {0x00, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x00};
-    const char code stop[8] = {0x00, 0x00, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x00};
-    
-    if (state == RUNNING) {
-        lcd_Load_Custom_Symbol(7, play);
-        lcd_Set_Cursor_Pos(1, 14);
-        lcd_Write_Data(7);
-    } else if (state == PAUSED) {
-        lcd_Load_Custom_Symbol(7, pause);
-        lcd_Set_Cursor_Pos(1, 14);
-        lcd_Write_Data(7);
-    } else if (state == STOPPED) {
-        lcd_Load_Custom_Symbol(7, stop);
-        lcd_Set_Cursor_Pos(1, 14);
-        lcd_Write_Data(7);
-    }
-}
-
-void update_date()
-{
-    lcd_Set_Cursor_Pos(0, 0);
-    lcd_Write_Data('0' + date.m10);
-    lcd_Write_Data('0' + date.m1);
-    lcd_Write_Data('-');
-    lcd_Write_Data('0' + date.d10);
-    lcd_Write_Data('0' + date.d1);
-    lcd_Write_String("   ");
-    lcd_Write_Data('0' + date.h10);
-    lcd_Write_Data('0' + date.h1);
-    lcd_Write_Data(':');
-    lcd_Write_Data('0' + date.mm10);
-    lcd_Write_Data('0' + date.mm1);
-    lcd_Write_Data(':');
-    lcd_Write_Data('0' + date.s10);
-    lcd_Write_Data('0' + date.s1);
-}
-
-void update_timer()
-{
-#if LANG == RU
-    lcd_Set_Cursor_Pos(1, 7);
-#else
-    lcd_Set_Cursor_Pos(1, 6);
-#endif
-    lcd_printf("%02bd:%02bd", timer.m, timer.s);
-}
-
-void show_main_screen()
+void display_error()
 {
     lcd_Clear();
+
 #if LANG == RU
-    lcd_Load_Custom_Symbol(0, ru_ii);
-    lcd_Load_Custom_Symbol(1, ru_m);
-    lcd_Set_Cursor_Pos(1, 0);
-    lcd_Write_String("Ta");
-    lcd_Write_Data(0);
-    lcd_Write_Data(1);
-    lcd_Write_String("ep:");
+    lcd_Load_Custom_Symbol(0, ru_sh);
+    lcd_Load_Custom_Symbol(1, ru_i);
+    lcd_Load_Custom_Symbol(2, ru_b);
+    lcd_Load_Custom_Symbol(3, ru_k);
+    lcd_Set_Cursor_Pos(0, 5);
+    lcd_Write_Char('O');
+    lcd_Write_Char(0);
+    lcd_Write_Char(1);
+    lcd_Write_Char(2);
+    lcd_Write_Char(3);
+    lcd_Write_Char('a');
+    lcd_Write_Char('!');
 #else
-    lcd_Set_Cursor_Pos(1, 0);
-    lcd_Write_String("Timer:");
+    lcd_Set_Cursor_Pos(0, 0);
+    if (state == TIMER_EDIT)
+        lcd_Write_String("Timer set error!");
+    if (state == DATE_EDIT)
+        lcd_Write_String(" Date set error!");
 #endif
-    update_date();
-    update_timer();
-    update_icon();
 }
 
 date_time_t default_date()
@@ -252,17 +214,321 @@ timer_t default_timer()
     return res;
 }
 
+void update_icon()
+{
+    const char code play[8] = {0x00, 0x10, 0x18, 0x1C, 0x1E, 0x1C, 0x18, 0x10};
+    const char code pause[8] = {0x00, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x1B, 0x00};
+    const char code stop[8] = {0x00, 0x00, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x00};
+    
+    if (state == RUNNING) {
+        lcd_Load_Custom_Symbol(7, play);
+        lcd_Set_Cursor_Pos(1, 14);
+        lcd_Write_Char(7);
+    } else if (state == PAUSED) {
+        lcd_Load_Custom_Symbol(7, pause);
+        lcd_Set_Cursor_Pos(1, 14);
+        lcd_Write_Char(7);
+    } else if (state == STOPPED) {
+        lcd_Load_Custom_Symbol(7, stop);
+        lcd_Set_Cursor_Pos(1, 14);
+        lcd_Write_Char(7);
+    }
+}
+
+void update_date()
+{
+    if ((state == STOPPED) || (state == RUNNING) || (state == PAUSED)) {
+        lcd_Set_Cursor_Pos(0, 0);
+        lcd_Write_Char('0' + date.m10);
+        lcd_Write_Char('0' + date.m1);
+        lcd_Write_Char('-');
+        lcd_Write_Char('0' + date.d10);
+        lcd_Write_Char('0' + date.d1);
+    } else if ((state == DATE_SHOW) || (state == DATE_EDIT)) {
+        lcd_Set_Cursor_Pos(0, 0);
+        lcd_Write_Char('0' + date.y1000);
+        lcd_Write_Char('0' + date.y100);
+        lcd_Write_Char('0' + date.y10);
+        lcd_Write_Char('0' + date.y1);
+        lcd_Write_Char('-');
+        lcd_Write_Char('0' + date.m10);
+        lcd_Write_Char('0' + date.m1);
+        lcd_Write_Char('-');
+        lcd_Write_Char('0' + date.d10);
+        lcd_Write_Char('0' + date.d1);
+    } else
+        return;
+}
+
+void update_week_day()
+{
+    if ((state == DATE_SHOW) || (state == DATE_EDIT)) {
+#if LANG == RU
+        lcd_Load_Custom_Symbol(0, ru_bcap);
+        lcd_Load_Custom_Symbol(1, ru_pcap);
+        lcd_Load_Custom_Symbol(2, ru_chcap);
+        lcd_Set_Cursor_Pos(0, 13);
+        if (date.wday == 0) {
+            lcd_Write_Char(1);
+            lcd_Write_Char('H');
+        } else if (date.wday == 1) {
+            lcd_Write_Char('B');
+            lcd_Write_Char('T');
+        } else if (date.wday == 2) {
+            lcd_Write_Char('C');
+            lcd_Write_Char('P');
+        } else if (date.wday == 3) {
+            lcd_Write_Char(2);
+            lcd_Write_Char('T');
+        } else if (date.wday == 4) {
+            lcd_Write_Char(1);
+            lcd_Write_Char('T');
+        } else if (date.wday == 5) {
+            lcd_Write_Char('C');
+            lcd_Write_Char(0);
+        } else if (date.wday == 6) {
+            lcd_Write_Char('B');
+            lcd_Write_Char('C');
+        }
+#else
+        lcd_Set_Cursor_Pos(0, 13);
+        if (date.wday == 0)
+            lcd_Write_String("MON");
+        else if (date.wday == 1)
+            lcd_Write_String("TUE");
+        else if (date.wday == 2)
+            lcd_Write_String("WED");
+        else if (date.wday == 3)
+            lcd_Write_String("THU");
+        else if (date.wday == 4)
+            lcd_Write_String("FRI");
+        else if (date.wday == 5)
+            lcd_Write_String("SAT");
+        else if (date.wday == 6)
+            lcd_Write_String("SUN");
+#endif
+    }
+}
+
+void update_time()
+{
+    if ((state == STOPPED) || (state == RUNNING) || (state == PAUSED))
+        lcd_Set_Cursor_Pos(0, 8);
+    else if ((state == DATE_SHOW) || (DATE_EDIT))
+        lcd_Set_Cursor_Pos(1, 4);
+    else
+        return;
+    
+    lcd_Write_Char('0' + date.h10);
+    lcd_Write_Char('0' + date.h1);
+    lcd_Write_Char(':');
+    lcd_Write_Char('0' + date.mm10);
+    lcd_Write_Char('0' + date.mm1);
+    lcd_Write_Char(':');
+    lcd_Write_Char('0' + date.s10);
+    lcd_Write_Char('0' + date.s1);
+}
+
+void update_timer()
+{
+    if ((state == STOPPED) || (state == RUNNING) || (state == PAUSED))
+#if LANG == RU
+        lcd_Set_Cursor_Pos(1, 7);
+#else
+        lcd_Set_Cursor_Pos(1, 6);
+#endif
+    else if (state == TIMER_EDIT)
+        lcd_Set_Cursor_Pos(1, 5);
+    else
+        return;
+    
+    lcd_printf("%02bd:%02bd", timer.m, timer.s);
+}
+
+void update_cursor()
+{
+    if (state == DATE_EDIT) {
+        if (cursor_pos == 0)
+            lcd_Set_Cursor_Pos(0, 2);
+        else if (cursor_pos == 1)
+            lcd_Set_Cursor_Pos(0, 3);
+        else if (cursor_pos == 2)
+            lcd_Set_Cursor_Pos(0, 5);
+        else if (cursor_pos == 3)
+            lcd_Set_Cursor_Pos(0, 6);
+        else if (cursor_pos == 4)
+            lcd_Set_Cursor_Pos(0, 8);
+        else if (cursor_pos == 5)
+            lcd_Set_Cursor_Pos(0, 9);
+        else if (cursor_pos == 6)
+            lcd_Set_Cursor_Pos(0, 13);
+        else if (cursor_pos == 7)
+            lcd_Set_Cursor_Pos(1, 4);
+        else if (cursor_pos == 8)
+            lcd_Set_Cursor_Pos(1, 5);
+        else if (cursor_pos == 9)
+            lcd_Set_Cursor_Pos(1, 7);
+        else if (cursor_pos == 10)
+            lcd_Set_Cursor_Pos(1, 8);
+        else if (cursor_pos == 11)
+            lcd_Set_Cursor_Pos(1, 10);
+        else if (cursor_pos == 12)
+            lcd_Set_Cursor_Pos(1, 11);
+        lcd_Cursor_On();
+    } else if (state == TIMER_EDIT) {
+        if (cursor_pos == 0)
+            lcd_Set_Cursor_Pos(1, 5);
+        else if (cursor_pos == 1)
+            lcd_Set_Cursor_Pos(1, 6);
+        else if (cursor_pos == 2)
+            lcd_Set_Cursor_Pos(1, 8);
+        else if (cursor_pos == 3);
+            lcd_Set_Cursor_Pos(1, 9);
+        lcd_Cursor_On();
+    } else
+        lcd_Cursor_Off();
+}
+
+void show_main_screen()
+{
+    lcd_Clear();
+
+#if LANG == RU
+    lcd_Load_Custom_Symbol(0, ru_ii);
+    lcd_Load_Custom_Symbol(1, ru_m);
+    lcd_Set_Cursor_Pos(1, 0);
+    lcd_Write_String("Ta");
+    lcd_Write_Char(0);
+    lcd_Write_Char(1);
+    lcd_Write_String("ep:");
+#else
+    lcd_Set_Cursor_Pos(1, 0);
+    lcd_Write_String("Timer:");
+#endif
+    update_date();
+    update_time();
+    update_timer();
+    update_icon();
+}
+
+void show_date_screen()
+{
+    lcd_Clear();
+    update_date();
+    update_week_day();
+    update_time();
+}
+
+void show_date_edit_screen()
+{
+    lcd_Clear();
+    update_date();
+    update_time();
+}
+
+void show_timer_edit_screen()
+{
+    lcd_Clear();
+
+#if LANG == RU
+    lcd_Load_Custom_Symbol(0, ru_ucap);
+    lcd_Load_Custom_Symbol(1, ru_t);
+    lcd_Load_Custom_Symbol(2, ru_ii);
+    lcd_Load_Custom_Symbol(3, ru_m);
+    lcd_Set_Cursor_Pos(0, 2);
+    lcd_Write_Char(0);
+    lcd_Write_Char('c');
+    lcd_Write_Char(1);
+    lcd_Write_Char('.');
+    lcd_Write_Char(' ');
+    lcd_Write_Char(1);
+    lcd_Write_Char('a');
+    lcd_Write_Char(2);
+    lcd_Write_Char(3);
+    lcd_Write_String("ep:");
+#else
+    lcd_Set_Cursor_Pos(0, 3);
+    lcd_Write_String("Set timer:");
+#endif
+
+    update_timer();
+    
+    cursor_pos = 0;
+    update_cursor();
+}
+
+void timer_cursor_move(key_t btn)
+{
+    if (state == DATE_EDIT) {
+        if (btn == UP)              // +1
+            cursor_pos = (cursor_pos + 14) % 13;
+        if (btn == DOWN)            // -1
+            cursor_pos = (cursor_pos + 1) % 13;
+    } else if (state == TIMER_EDIT) {
+        if (btn == UP)              // +1
+            cursor_pos = (cursor_pos + 5) % 4;
+        if (btn == DOWN)            // -1
+            cursor_pos = (cursor_pos + 1) % 4;
+    }
+}
+
+void timer_cursor_edit(key_t btn)
+{
+    
+}
+
+void beep_ms(uint16 ms)
+{
+    BUZZER = 1;
+    beep_timer = ms;
+}
+
+void beep_short()
+{
+    beep_ms(25);
+}
+
+void beep_long()
+{
+    beep_ms(500);
+}
+
+void start_timer()
+{
+    backup_timer_enable = 1;
+}
+
+void stop_timer()
+{
+    backup_timer_enable = 0;
+}
+
+void dec_timer()
+{
+    if (timer.s)
+        timer.s--;
+    else {
+        timer.s = 0;
+        timer.m--;
+    }
+    
+    if ((timer.m == 0) && (timer.s == 0)) {
+        state = STOPPED;
+        update_icon();
+        stop_timer();
+    }
+}
+
 void scan_keyboard()
 {
     prev_key = key_pressed;
 
-    P2_4 = 1;
-    P2_3 = 1;
-    P2_2 = 1;
-
     P2_7 = 1;
     P2_6 = 1;
     P2_5 = 1;
+    P2_4 = 1;
+    P2_3 = 1;
+    P2_2 = 1;
 
     key_pressed = NONE;
     
@@ -309,6 +575,72 @@ void scan_keyboard()
     P2_2 = 1;
 }
 
+void on_button_pressed(key_t btn)
+{
+    switch (state) {
+    case STOPPED:
+        if (btn == LEFT) {
+            state = TIMER_EDIT;
+            show_timer_edit_screen();
+        } else if (btn == RIGHT) {
+            state = DATE_SHOW;
+            show_date_screen();
+        } else if (btn == START) {
+            state = RUNNING;
+            update_icon();
+            start_timer();
+        }
+        break;
+    case RUNNING:
+        if (btn == STOP) {
+            state = PAUSED;
+            update_icon();
+            stop_timer();
+        }
+        break;
+    case PAUSED:
+        if (btn == STOP) {
+            state = STOPPED;
+            update_icon();
+            stop_timer();
+        } else if (btn == START) {
+            state = RUNNING;
+            update_icon();
+            start_timer();
+        }
+        break;
+    case TIMER_EDIT:
+        if (btn == STOP) {
+            state = STOPPED;
+            show_main_screen();
+        } else if (btn == RIGHT) {
+            timer_cursor_move(btn);
+            update_cursor();
+        } else if (btn == LEFT) {
+            timer_cursor_move(btn);
+            update_cursor();
+        }
+        break;
+    case DATE_SHOW:
+        if (btn == STOP) {
+            state = STOPPED;
+            show_main_screen();
+        } else if (btn == OK) {
+            state = DATE_EDIT;
+            show_date_edit_screen();
+        }
+        break;
+    case DATE_EDIT:
+        if (btn == STOP) {
+            state = STOPPED;
+            show_main_screen();
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 void main()
 {
     TMOD = 0x01;
@@ -323,16 +655,29 @@ void main()
     display_logo();
     delay(2000);
     
-    state = STOPPED;
     date = default_date();
     timer = default_timer();
     old_timer = default_timer();
+    
+    state = STOPPED;
     show_main_screen();
     
     while (1) {
         if (scan_keyboard_request) {
             scan_keyboard_request = 0;
             scan_keyboard();
+            
+            if ((key_pressed != NONE) && (prev_key == NONE))
+                beep_short();
+
+            if ((key_pressed == NONE) && (prev_key != NONE))
+                on_button_pressed(prev_key);
+        }
+        
+        if (dec_timer_request) {
+            dec_timer_request = 0;
+            dec_timer();
+            update_timer();
         }
     }
 }
@@ -344,11 +689,19 @@ void timer0_ISR() interrupt 1
     
     if (timer_scaler++ >= 1000) {
         timer_scaler = 0;
-        LED_BLINK = !LED_BLINK;
+        LED_BLINKER = !LED_BLINKER;
+        
+        if (backup_timer_enable)
+            dec_timer_request = 1;
     }
     
     if (delay_timer)
         delay_timer--;
+    
+    if (beep_timer)
+        beep_timer--;
+    else
+        BUZZER = 0;
 
     scan_keyboard_request = 1;
 }

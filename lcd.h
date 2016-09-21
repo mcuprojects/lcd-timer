@@ -27,7 +27,7 @@ void lcd_Cmd(char a)
     LCD_EN  = 0;             // => E = 0
 }
 
-void lcd_Write_Data(char c)
+void lcd_Write_Char(char c)
 {
     LCD_RS = 1;              // => LCD_RS = 1
     LCD_PORT = c;
@@ -75,7 +75,7 @@ void lcd_Write_String(char *a)
 {
     int i;
     for (i = 0; a[i] != '\0'; i++)
-        lcd_Write_Data(a[i]);
+        lcd_Write_Char(a[i]);
 }
 
 void lcd_Load_Custom_Symbol(const unsigned char addr, const unsigned char *pattern)
@@ -83,15 +83,15 @@ void lcd_Load_Custom_Symbol(const unsigned char addr, const unsigned char *patte
     unsigned char i;
     lcd_Cmd(0x40 + (addr << 3));
     for (i = 0; i < 8; i++)
-        lcd_Write_Data(pattern[i]);
+        lcd_Write_Char(pattern[i]);
 }
 
-void lcd_Cursor_Blink_On()
+void lcd_Cursor_On()
 {
     lcd_Cmd(0x0F);
 }
 
-void lcd_Cursor_Blink_Off()
+void lcd_Cursor_Off()
 {
     lcd_Cmd(0x0C);
 }
