@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <intrins.h>
 
 #define CPU_FREQ 11059200
 #define T1MS (65536 - CPU_FREQ/12/1000)
@@ -17,20 +16,13 @@
 #endif
 
 #define LCD_PORT P1
+#define LCD_RS P2_0
+#define LCD_RW P3_7
+#define LCD_EN P2_1
 #include "lcd.h"
-sbit LCD_RS = P2^0;
-sbit LCD_RW = P3^7;
-sbit LCD_EN = P2^1;
 
-sbit LED_BLINKER = P3^1;
-sbit BUZZER = P3^4;
-
-sbit P2_2 = P2^2;
-sbit P2_3 = P2^3;
-sbit P2_4 = P2^4;
-sbit P2_5 = P2^5;
-sbit P2_6 = P2^6;
-sbit P2_7 = P2^7;
+#define LED_BLINKER P3_1
+#define BUZZER P3_4
 
 typedef unsigned long uint32;
 typedef unsigned short uint16;
@@ -78,7 +70,7 @@ typedef struct {
     uint8 wday;
 } date_time_t;
 
-typedef struct timer {
+typedef struct {
     uint8 m;
     uint8 s;
 } timer_t;
@@ -183,35 +175,29 @@ void display_error()
 #endif
 }
 
-date_time_t default_date()
+void default_date(date_time_t *d)
 {
-    date_time_t res;
-    res.y1000 = 2;
-    res.y100 =  0;
-    res.y10 =   1;
-    res.y1 =    6;
-    res.m10 =   0;
-    res.m1 =    1;
-    res.d10 =   0;
-    res.d1 =    1;
-    res.h10 =  1;
-    res.h1 =   2;
-    res.mm10 = 0;
-    res.mm1 =  0;
-    res.s10 =  0;
-    res.s1 =   0;
-    res.wday =  0;
-    
-    return res;
+    d->y1000 = 2;
+    d->y100 =  0;
+    d->y10 =   1;
+    d->y1 =    6;
+    d->m10 =   0;
+    d->m1 =    1;
+    d->d10 =   0;
+    d->d1 =    1;
+    d->h10 =  1;
+    d->h1 =   2;
+    d->mm10 = 0;
+    d->mm1 =  0;
+    d->s10 =  0;
+    d->s1 =   0;
+    d->wday =  0;
 }
 
-timer_t default_timer()
+void default_timer(timer_t *t)
 {
-    timer_t res;
-    res.m = 0;
-    res.s = 30;
-    
-    return res;
+    t->m = 0;
+    t->s = 30;
 }
 
 void update_icon()
@@ -314,7 +300,7 @@ void update_time()
 {
     if ((state == STOPPED) || (state == RUNNING) || (state == PAUSED))
         lcd_Set_Cursor_Pos(0, 8);
-    else if ((state == DATE_SHOW) || (DATE_EDIT))
+    else if ((state == DATE_SHOW) || (state == DATE_EDIT))
         lcd_Set_Cursor_Pos(1, 4);
     else
         return;
@@ -474,7 +460,7 @@ void timer_cursor_move(key_t btn)
 
 void timer_cursor_edit(key_t btn)
 {
-    
+    (void) btn;
 }
 
 void beep_ms(uint16 ms)
@@ -533,43 +519,36 @@ void scan_keyboard()
     key_pressed = NONE;
     
     P2_4 = 0;
-    _nop_();
     if (P2_7 == 0)
         key_pressed = UP;
     P2_4 = 1;
 
     P2_3 = 0;
-    _nop_();
     if (P2_7 == 0)
         key_pressed = RIGHT;
     P2_3 = 1;
 
     P2_2 = 0;
-    _nop_();
     if (P2_7 == 0)
         key_pressed = LEFT;
     P2_2 = 1;
 
     P2_4 = 0;
-    _nop_();
     if (P2_6 == 0)
         key_pressed = START;
     P2_4 = 1;
 
     P2_3 = 0;
-    _nop_();
     if (P2_6 == 0)
         key_pressed = OK;
     P2_3 = 1;
 
     P2_2 = 0;
-    _nop_();
     if (P2_6 == 0)
         key_pressed = DOWN;
     P2_2 = 1;
 
     P2_2 = 0;
-    _nop_();
     if (P2_5 == 0)
         key_pressed = STOP;
     P2_2 = 1;
@@ -655,9 +634,9 @@ void main()
     display_logo();
     delay(2000);
     
-    date = default_date();
-    timer = default_timer();
-    old_timer = default_timer();
+    default_date(&date);
+    default_timer(&timer);
+    default_timer(&old_timer);
     
     state = STOPPED;
     show_main_screen();

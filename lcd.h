@@ -1,10 +1,6 @@
 //LCD Functions Developed by electroSome
 
-//LCD Module Connections
-extern bit LCD_RS;
-extern bit LCD_RW;
-extern bit LCD_EN;
-//#define LCD_PORT P1
+// TODO: make LCD_PORT & LCD pins 'extern'
 
 
 void lcd_Delay(int a)
@@ -36,7 +32,7 @@ void lcd_Write_Char(char c)
     LCD_EN  = 0;             // => E = 0
 }
 
-lcd_Clear()
+void lcd_Clear()
 {
     lcd_Cmd(0x01);
     lcd_Delay(10);
@@ -88,7 +84,7 @@ void lcd_Load_Custom_Symbol(const unsigned char addr, const unsigned char *patte
 
 void lcd_Cursor_On()
 {
-    lcd_Cmd(0x0F);
+    lcd_Cmd(0x0D);
 }
 
 void lcd_Cursor_Off()
