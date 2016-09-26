@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define CPU_FREQ 11059200
 #define T1MS (65536 - CPU_FREQ/12/1000)
@@ -27,7 +28,10 @@
 typedef unsigned long uint32;
 typedef unsigned short uint16;
 typedef unsigned char uint8;
+
 typedef uint8 bool;
+#define false 0
+#define true 1
 
 typedef enum {
     UNDEFINED,
@@ -75,6 +79,8 @@ typedef struct {
     uint8 s;
 } timer_t;
 
+const uint8 code days_in_month[12] = {31, 29, 31, 20, 31, 30, 31, 31, 30, 31, 30, 31};
+
 uint16 timer_scaler = 0;
 uint16 delay_timer = 0;
 uint16 beep_timer = 0;
@@ -90,6 +96,9 @@ key_t prev_key = NONE;
 date_time_t idata date;
 timer_t idata timer;
 timer_t idata old_timer;
+
+date_time_t idata new_date;
+timer_t idata new_timer;
 
 void delay(uint16 ms)
 {
@@ -175,6 +184,36 @@ void display_error()
 #endif
 }
 
+bool valid_date(date_time_t *d)
+{
+    uint8 year = d->y10 * 10 + d->y1;
+    uint8 month = d->m10 * 10 + d->m1;
+    uint8 day = d->d10 * 10 + d->d1;
+    uint8 hour = d->h10 * 10 + d->h1;
+    uint8 minute = d->mm10 * 10 + d->mm1;
+    uint8 second = d->s10 * 10 + d->s1;
+    uint8 wday = d->wday;
+
+    if (year > 99)
+        return false;
+    if ((month == 0) || (month > 12))
+        return false;
+    if ((day == 0) || (day > days_in_month[month - 1]))
+        return false;
+    if (((year % 4) != 0) && (month == 2) && (day > 28))
+        return false;
+    if (hour > 23)
+        return false;
+    if (minute > 59)
+        return false;
+    if (second > 59)
+        return false;
+    if (wday > 6)
+        return false;
+
+    return true;
+}
+
 void default_date(date_time_t *d)
 {
     d->y1000 = 2;
@@ -230,7 +269,7 @@ void update_date()
         lcd_Write_Char('-');
         lcd_Write_Char('0' + date.d10);
         lcd_Write_Char('0' + date.d1);
-    } else if ((state == DATE_SHOW) || (state == DATE_EDIT)) {
+    } else if (state == DATE_SHOW) {
         lcd_Set_Cursor_Pos(0, 0);
         lcd_Write_Char('0' + date.y1000);
         lcd_Write_Char('0' + date.y100);
@@ -242,6 +281,18 @@ void update_date()
         lcd_Write_Char('-');
         lcd_Write_Char('0' + date.d10);
         lcd_Write_Char('0' + date.d1);
+    } else if (state == DATE_EDIT) {
+        lcd_Set_Cursor_Pos(0, 0);
+        lcd_Write_Char('0' + new_date.y1000);
+        lcd_Write_Char('0' + new_date.y100);
+        lcd_Write_Char('0' + new_date.y10);
+        lcd_Write_Char('0' + new_date.y1);
+        lcd_Write_Char('-');
+        lcd_Write_Char('0' + new_date.m10);
+        lcd_Write_Char('0' + new_date.m1);
+        lcd_Write_Char('-');
+        lcd_Write_Char('0' + new_date.d10);
+        lcd_Write_Char('0' + new_date.d1);
     } else
         return;
 }
@@ -328,7 +379,19 @@ void update_timer()
     else
         return;
     
-    lcd_printf("%02bd:%02bd", timer.m, timer.s);
+    if (state == TIMER_EDIT) {
+        lcd_Write_Char('0' + (new_timer.m / 10));
+        lcd_Write_Char('0' + (new_timer.m % 10));
+        lcd_Write_Char(':');
+        lcd_Write_Char('0' + (new_timer.s / 10));
+        lcd_Write_Char('0' + (new_timer.s % 10));
+    } else {
+        lcd_Write_Char('0' + (new_timer.m / 10));
+        lcd_Write_Char('0' + (new_timer.m % 10));
+        lcd_Write_Char(':');
+        lcd_Write_Char('0' + (new_timer.s / 10));
+        lcd_Write_Char('0' + (new_timer.s % 10));
+    }
 }
 
 void update_cursor()
@@ -360,24 +423,24 @@ void update_cursor()
             lcd_Set_Cursor_Pos(1, 10);
         else if (cursor_pos == 12)
             lcd_Set_Cursor_Pos(1, 11);
-        lcd_Cursor_On();
     } else if (state == TIMER_EDIT) {
         if (cursor_pos == 0)
-            lcd_Set_Cursor_Pos(1, 5);
+           lcd_Set_Cursor_Pos(1, 5);
         else if (cursor_pos == 1)
             lcd_Set_Cursor_Pos(1, 6);
         else if (cursor_pos == 2)
             lcd_Set_Cursor_Pos(1, 8);
-        else if (cursor_pos == 3);
+        else if (cursor_pos == 3)
             lcd_Set_Cursor_Pos(1, 9);
-        lcd_Cursor_On();
-    } else
+    } else {
         lcd_Cursor_Off();
+    }
 }
 
 void show_main_screen()
 {
     lcd_Clear();
+    lcd_Cursor_Off();
 
 #if LANG == RU
     lcd_Load_Custom_Symbol(0, ru_ii);
@@ -408,6 +471,7 @@ void show_date_screen()
 void show_date_edit_screen()
 {
     lcd_Clear();
+    memcpy(&new_date, &date, sizeof(date_time_t));
     update_date();
     update_time();
 }
@@ -437,30 +501,171 @@ void show_timer_edit_screen()
     lcd_Write_String("Set timer:");
 #endif
 
+    memcpy(&new_timer, &timer, sizeof(timer_t));
     update_timer();
     
+    lcd_Cursor_On();
     cursor_pos = 0;
     update_cursor();
 }
 
+void date_cursor_move(key_t btn)
+{
+    if (btn == UP)
+        cursor_pos = (cursor_pos + 12) % 13;    // -1
+    if (btn == DOWN)
+        cursor_pos = (cursor_pos + 1) % 13;     // +1
+}
+
 void timer_cursor_move(key_t btn)
 {
-    if (state == DATE_EDIT) {
-        if (btn == UP)              // +1
-            cursor_pos = (cursor_pos + 14) % 13;
-        if (btn == DOWN)            // -1
-            cursor_pos = (cursor_pos + 1) % 13;
-    } else if (state == TIMER_EDIT) {
-        if (btn == UP)              // +1
-            cursor_pos = (cursor_pos + 5) % 4;
-        if (btn == DOWN)            // -1
-            cursor_pos = (cursor_pos + 1) % 4;
+    if (btn == UP)
+        cursor_pos = (cursor_pos + 3) % 4;      // -1
+    if (btn == DOWN)
+        cursor_pos = (cursor_pos + 1) % 4;      // +1
+}
+
+void date_cursor_edit(key_t btn)
+{
+    if (btn == RIGHT) {                         // +1
+        if (cursor_pos == 0) {          // yyYy-mm-dd hh:mm:ss w
+            new_date.y10 = (new_date.y10 + 1) % 10;
+        } else if (cursor_pos == 1) {   // yyyY-mm-dd hh:mm:ss w
+            new_date.y1 = (new_date.y1 + 1) % 10;
+        } else if (cursor_pos == 2) {   // yyyy-Mm-dd hh:mm:ss w
+            new_date.m10 = (new_date.m10 + 1) % 2;
+        } else if (cursor_pos == 3) {   // yyyy-mM-dd hh:mm:ss w
+            if (new_date.m10 < 1)
+                new_date.m1 = (new_date.m1 + 1) % 10;
+            else
+                new_date.m1 = (new_date.m1 + 1) % 3;
+        } else if (cursor_pos == 4) {   // yyyy-mm-Dd hh:mm:ss w
+            if (new_date.d10 < (days_in_month[new_date.m10 * 10 + new_date.m1 - 1] / 10))
+                new_date.d10 = (new_date.d10 + 1) % 4;
+            else
+                new_date.d10 = 0;
+        } else if (cursor_pos == 5) {   // yyyy-mm-dD hh:mm:ss w
+            if (new_date.d1 < days_in_month[new_date.m10 * 10 + new_date.m1 - 1])
+                new_date.d1 = (new_date.d1 + 1) % 10;
+            else
+                new_date.d1 = 0;
+        } else if (cursor_pos == 6) {   // yyyy-mm-dd hh:mm:ss W
+            new_date.wday = (new_date.wday + 1) % 7;
+        } else if (cursor_pos == 7) {   // yyyy-mm-dd Hh:mm:ss w
+            new_date.h10 = (new_date.h10 + 1) % 3;
+        } else if (cursor_pos == 8) {   // yyyy-mm-dd hH:mm:ss w
+            if (new_date.h10 < 2)
+                new_date.h1 = (new_date.h1 + 1) % 10;
+            else
+                new_date.h1 = (new_date.h1 + 1) % 5;
+        } else if (cursor_pos == 9) {   // yyyy-mm-dd hh:Mm:ss w
+            new_date.mm10 = (new_date.mm10 + 1) % 6;
+        } else if (cursor_pos == 10) {  // yyyy-mm-dd hh:mM:ss w
+            new_date.mm1 = (new_date.mm1 + 1) % 10;
+        } else if (cursor_pos == 11) {  // yyyy-mm-dd hh:mm:Ss w
+            new_date.s10 = (new_date.s10 + 1) % 6;
+        } else if (cursor_pos == 12) {  // yyyy-mm-dd hh:mm:sS w
+            new_date.s1 = (new_date.s1 + 1) % 10;
+        }
+    } else if (btn == LEFT) {                   // -1
+        if (cursor_pos == 0) {          // yyYy-mm-dd hh:mm:ss w
+            new_date.y10 = (new_date.y10 + 9) % 10;
+        } else if (cursor_pos == 1) {   // yyyY-mm-dd hh:mm:ss w
+            new_date.y1 = (new_date.y1 + 9) % 10;
+        } else if (cursor_pos == 2) {   // yyyy-Mm-dd hh:mm:ss w
+            new_date.m10 = (new_date.m10 + 3) % 2;
+        } else if (cursor_pos == 3) {   // yyyy-mM-dd hh:mm:ss w
+            if (new_date.m10 < 1)
+                new_date.m1 = (new_date.m1 + 9) % 10;
+            else
+                new_date.m1 = (new_date.m1 + 2) % 3;
+        } else if (cursor_pos == 4) {   // yyyy-mm-Dd hh:mm:ss w
+            if (new_date.d10 > 0)
+                new_date.d10--;
+            else
+                new_date.d10 = days_in_month[new_date.m10 * 10 + new_date.m1 - 1] / 10;
+        } else if (cursor_pos == 5) {   // yyyy-mm-dD hh:mm:ss w
+            if (new_date.d1 > 0)
+                new_date.d1--;
+            else
+                new_date.d1 = days_in_month[new_date.m10 * 10 + new_date.m1 - 1] % 10;
+        } else if (cursor_pos == 6) {   // yyyy-mm-dd hh:mm:ss W
+            new_date.wday = (new_date.wday + 6) % 7;
+        } else if (cursor_pos == 7) {   // yyyy-mm-dd Hh:mm:ss w
+            new_date.h10 = (new_date.h10 + 2) % 3;
+        } else if (cursor_pos == 8) {   // yyyy-mm-dd hH:mm:ss w
+            if (new_date.h10 < 2)
+                new_date.h1 = (new_date.h1 + 9) % 10;
+            else
+                new_date.h1 = (new_date.h1 + 4) % 5;
+        } else if (cursor_pos == 9) {   // yyyy-mm-dd hh:Mm:ss w
+            new_date.mm10 = (new_date.mm10 + 5) % 6;
+        } else if (cursor_pos == 10) {  // yyyy-mm-dd hh:mM:ss w
+            new_date.mm1 = (new_date.mm1 + 9) % 10;
+        } else if (cursor_pos == 11) {  // yyyy-mm-dd hh:mm:Ss w
+            new_date.s10 = (new_date.s10 + 5) % 6;
+        } else if (cursor_pos == 12) {  // yyyy-mm-dd hh:mm:sS w
+            new_date.s1 = (new_date.s1 + 9) % 10;
+        }
     }
 }
 
 void timer_cursor_edit(key_t btn)
 {
-    (void) btn;
+    uint8 m10 = new_timer.m / 10;
+    uint8 m1 = new_timer.m % 10;
+    uint8 s10 = new_timer.s / 10;
+    uint8 s1 = new_timer.s % 10;
+
+    if (btn == RIGHT) {                         // +1
+        if (cursor_pos == 0) {          // Mm:ss
+            m10 = (m10 + 1) % 4;
+        } else if (cursor_pos == 1) {   // mM:ss
+            if (m10 < 3)
+                m1 = (m1 + 1) % 10;
+            else
+                m1 = 0;
+        } else if (cursor_pos == 2) {   // mm:Ss
+            s10 = (s10 + 1) % 6;
+        } else if (cursor_pos == 3) {   // mm:sS
+            s1 = (s1 + 1) % 10;
+        }
+    } else if (btn == LEFT) {                   // -1
+        if (cursor_pos == 0) {          // Mm:ss
+            m10 = (m10 + 3) % 4;
+        } else if (cursor_pos == 1) {   // mM:ss
+            if (m10 < 3)
+                m1 = (m1 + 9) % 10;
+            else
+                m1 = 0;
+        } else if (cursor_pos == 2) {   // mm:Ss
+            s10 = (s10 + 5) % 6;
+        } else if (cursor_pos == 3) {   // mm:sS
+            s1 = (s1 + 9) % 10;
+        }
+    }
+
+    new_timer.m = m10 * 10 + m1;
+    new_timer.s = s10 * 10 + s1;
+}
+
+void save_date()
+{
+
+}
+
+void save_timer()
+{
+    if (((new_timer.m < 30) && (new_timer.s <= 59)) || \
+        ((new_timer.m == 30) && (new_timer.s == 0))) {
+        memcpy(&timer, &new_timer, sizeof(timer_t));
+    } else {
+        display_error();
+        delay(1000);
+    }
+
+    state = STOPPED;
+    show_main_screen();
 }
 
 void beep_ms(uint16 ms)
@@ -592,12 +797,17 @@ void on_button_pressed(key_t btn)
         if (btn == STOP) {
             state = STOPPED;
             show_main_screen();
-        } else if (btn == RIGHT) {
+        } else if ((btn == UP) || (btn == DOWN)) {
             timer_cursor_move(btn);
             update_cursor();
-        } else if (btn == LEFT) {
-            timer_cursor_move(btn);
+        } else if ((btn == RIGHT) || (btn == LEFT)) {
+            timer_cursor_edit(btn);
+            new_timer.m = 23;
+            new_timer.s = 56;
+            update_timer();
             update_cursor();
+        } else if (btn == OK) {
+            save_timer();
         }
         break;
     case DATE_SHOW:
@@ -613,6 +823,15 @@ void on_button_pressed(key_t btn)
         if (btn == STOP) {
             state = STOPPED;
             show_main_screen();
+        } else if ((btn == UP) || (btn == DOWN)) {
+            date_cursor_move(btn);
+            update_cursor();
+        } else if ((btn == RIGHT) || (btn == LEFT)) {
+            date_cursor_edit(btn);
+            update_date();
+            update_cursor();
+        } else if (btn == OK) {
+            save_date();
         }
         break;
     default:
