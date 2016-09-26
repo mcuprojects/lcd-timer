@@ -1,15 +1,20 @@
 CC=sdcc
-IHXTOHEX=packihx
+
+SERIALPORT=/dev/ttyUSB0
+BAUDRATE=115200
 
 TARGET=timer
 
-all: hex
+all: hex bin
 
 ihx: $(TARGET).c
 	$(CC) $(TARGET).c
 
 hex: ihx
-	$(IHXTOHEX) $(TARGET).ihx > $(TARGET).hex
+	packihx $(TARGET).ihx > $(TARGET).hex
+	
+bin: ihx
+	hex2bin $(TARGET).ihx
 
 clean:
 	rm -f $(TARGET).map
@@ -22,6 +27,7 @@ clean:
 	rm -f $(TARGET).lnk
 	rm -f $(TARGET).ihx
 	rm -f $(TARGET).hex
+	rm -f $(TARGET).bin
 
-install: all
-# TODO
+install: ihx
+	stcgal -p $(SERIALPORT) -P stc12 -b $(BAUDRATE) $(TARGET).ihx
