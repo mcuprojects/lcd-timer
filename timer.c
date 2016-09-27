@@ -8,14 +8,6 @@
 #define CPU_FREQ 11059200
 #define T1MS (65536 - CPU_FREQ/12/1000)
 
-#define EN 0
-#define RU 1
-#define LANG RU
-
-#if LANG == RU
-    #include "font_ru.h"
-#endif
-
 #define LCD_PORT P1
 #define LCD_RS P2_0
 #define LCD_RW P3_7
@@ -24,6 +16,14 @@
 
 #define LED_BLINKER P3_1
 #define BUZZER P3_4
+
+#define EN 0
+#define RU 1
+#define LANG RU
+
+#if LANG == RU
+    #include "font_ru.h"
+#endif
 
 typedef unsigned long uint32;
 typedef unsigned short uint16;
@@ -212,6 +212,16 @@ bool valid_date(date_time_t *d)
         return false;
 
     return true;
+}
+
+bool valid_timer(timer_t *t)
+{
+    if (t->m < 30)
+        return (t->s < 30);
+    else if (t->m == 30)
+        return (t->s == 0);
+    else
+        return false;
 }
 
 void default_date(date_time_t *d)
@@ -651,13 +661,20 @@ void timer_cursor_edit(key_t btn)
 
 void save_date()
 {
+    if (valid_date(&new_date)) {
+        memcpy(&date, &new_date, sizeof(date_time_t));
+    } else {
+        display_error();
+        delay(1000);
+    }
 
+    state = STOPPED;
+    show_main_screen();
 }
 
 void save_timer()
 {
-    if (((new_timer.m < 30) && (new_timer.s <= 59)) || \
-        ((new_timer.m == 30) && (new_timer.s == 0))) {
+    if (valid_timer(&new_timer)) {
         memcpy(&timer, &new_timer, sizeof(timer_t));
     } else {
         display_error();
