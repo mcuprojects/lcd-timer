@@ -5,6 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef unsigned long uint32;
+typedef unsigned short uint16;
+typedef unsigned char uint8;
+
+typedef uint8 bool;
+#define false 0
+#define true 1
+
 #define CPU_FREQ 11059200
 #define T1MS (65536 - CPU_FREQ/12/1000)
 
@@ -12,10 +20,18 @@
 #define LCD_RS P2_0
 #define LCD_RW P3_7
 #define LCD_EN P2_1
+//#define LCD_RS P3_5
+//#define LCD_EN P3_4
 #include "lcd.h"
 
-#define LED_BLINKER P3_1
+#include "rtc.h"
+
+#define LED_CONST P3_0
+#define LED_BLINK P3_1
 #define BUZZER P3_4
+#define RELAY P3_5
+//#define BUZZER P2_0
+//#define RELAY P2_1
 
 #define EN 0
 #define RU 1
@@ -25,13 +41,7 @@
     #include "font_ru.h"
 #endif
 
-typedef unsigned long uint32;
-typedef unsigned short uint16;
-typedef unsigned char uint8;
-
-typedef uint8 bool;
-#define false 0
-#define true 1
+#define MUTE
 
 typedef enum {
     UNDEFINED,
@@ -55,26 +65,6 @@ typedef enum {
 } key_t;
 
 typedef struct {
-    uint8 y1000;
-    uint8 y100;
-    uint8 y10;
-    uint8 y1;
-    uint8 m10;
-    uint8 m1;
-    uint8 d10;
-    uint8 d1;
-    
-    uint8 h10;
-    uint8 h1;
-    uint8 mm10;
-    uint8 mm1;
-    uint8 s10;
-    uint8 s1;
-    
-    uint8 wday;
-} date_time_t;
-
-typedef struct {
     uint8 m;
     uint8 s;
 } timer_t;
@@ -86,6 +76,7 @@ uint16 delay_timer = 0;
 uint16 beep_timer = 0;
 bool scan_keyboard_request = 0;
 bool dec_timer_request = 0;
+bool read_date_request = 0;
 bool backup_timer_enable = 0;
 uint8 cursor_pos = 0;
 
@@ -100,7 +91,7 @@ timer_t idata old_timer;
 date_time_t idata new_date;
 timer_t idata new_timer;
 
-void delay(uint16 ms)
+void delay_ms(uint16 ms)
 {
     delay_timer = ms;
     while (delay_timer);
@@ -161,6 +152,7 @@ void display_logo()
 void display_error()
 {
     lcd_Clear();
+    lcd_Cursor_Off();
 
 #if LANG == RU
     lcd_Load_Custom_Symbol(0, ru_sh);
@@ -180,7 +172,7 @@ void display_error()
     if (state == TIMER_EDIT)
         lcd_Write_String("Timer set error!");
     if (state == DATE_EDIT)
-        lcd_Write_String(" Date set error!");
+        lcd_Write_String("Clock set error!");
 #endif
 }
 
@@ -217,7 +209,7 @@ bool valid_date(date_time_t *d)
 bool valid_timer(timer_t *t)
 {
     if (t->m < 30)
-        return (t->s < 30);
+        return (t->s < 60);
     else if (t->m == 30)
         return (t->s == 0);
     else
@@ -226,8 +218,8 @@ bool valid_timer(timer_t *t)
 
 void default_date(date_time_t *d)
 {
-    d->y1000 = 2;
-    d->y100 =  0;
+//    d->y1000 = 2;
+//    d->y100 =  0;
     d->y10 =   1;
     d->y1 =    6;
     d->m10 =   0;
@@ -281,8 +273,10 @@ void update_date()
         lcd_Write_Char('0' + date.d1);
     } else if (state == DATE_SHOW) {
         lcd_Set_Cursor_Pos(0, 0);
-        lcd_Write_Char('0' + date.y1000);
-        lcd_Write_Char('0' + date.y100);
+//        lcd_Write_Char('0' + date.y1000);
+//        lcd_Write_Char('0' + date.y100);
+        lcd_Write_Char('2');
+        lcd_Write_Char('0');
         lcd_Write_Char('0' + date.y10);
         lcd_Write_Char('0' + date.y1);
         lcd_Write_Char('-');
@@ -293,8 +287,10 @@ void update_date()
         lcd_Write_Char('0' + date.d1);
     } else if (state == DATE_EDIT) {
         lcd_Set_Cursor_Pos(0, 0);
-        lcd_Write_Char('0' + new_date.y1000);
-        lcd_Write_Char('0' + new_date.y100);
+//        lcd_Write_Char('0' + new_date.y1000);
+//        lcd_Write_Char('0' + new_date.y100);
+        lcd_Write_Char('2');
+        lcd_Write_Char('0');
         lcd_Write_Char('0' + new_date.y10);
         lcd_Write_Char('0' + new_date.y1);
         lcd_Write_Char('-');
@@ -309,52 +305,59 @@ void update_date()
 
 void update_week_day()
 {
-    if ((state == DATE_SHOW) || (state == DATE_EDIT)) {
+    uint8 wday;
+
+    if (state == DATE_SHOW)
+        wday = date.wday;
+    else if (state == DATE_EDIT)
+        wday = new_date.wday;
+    else
+        return;
+
 #if LANG == RU
-        lcd_Load_Custom_Symbol(0, ru_bcap);
-        lcd_Load_Custom_Symbol(1, ru_pcap);
-        lcd_Load_Custom_Symbol(2, ru_chcap);
-        lcd_Set_Cursor_Pos(0, 13);
-        if (date.wday == 0) {
-            lcd_Write_Char(1);
-            lcd_Write_Char('H');
-        } else if (date.wday == 1) {
-            lcd_Write_Char('B');
-            lcd_Write_Char('T');
-        } else if (date.wday == 2) {
-            lcd_Write_Char('C');
-            lcd_Write_Char('P');
-        } else if (date.wday == 3) {
-            lcd_Write_Char(2);
-            lcd_Write_Char('T');
-        } else if (date.wday == 4) {
-            lcd_Write_Char(1);
-            lcd_Write_Char('T');
-        } else if (date.wday == 5) {
-            lcd_Write_Char('C');
-            lcd_Write_Char(0);
-        } else if (date.wday == 6) {
-            lcd_Write_Char('B');
-            lcd_Write_Char('C');
-        }
-#else
-        lcd_Set_Cursor_Pos(0, 13);
-        if (date.wday == 0)
-            lcd_Write_String("MON");
-        else if (date.wday == 1)
-            lcd_Write_String("TUE");
-        else if (date.wday == 2)
-            lcd_Write_String("WED");
-        else if (date.wday == 3)
-            lcd_Write_String("THU");
-        else if (date.wday == 4)
-            lcd_Write_String("FRI");
-        else if (date.wday == 5)
-            lcd_Write_String("SAT");
-        else if (date.wday == 6)
-            lcd_Write_String("SUN");
-#endif
+    lcd_Load_Custom_Symbol(0, ru_bcap);
+    lcd_Load_Custom_Symbol(1, ru_pcap);
+    lcd_Load_Custom_Symbol(2, ru_chcap);
+    lcd_Set_Cursor_Pos(0, 13);
+    if (wday == 0) {
+        lcd_Write_Char(1);
+        lcd_Write_Char('H');
+    } else if (wday == 1) {
+        lcd_Write_Char('B');
+        lcd_Write_Char('T');
+    } else if (wday == 2) {
+        lcd_Write_Char('C');
+        lcd_Write_Char('P');
+    } else if (wday == 3) {
+        lcd_Write_Char(2);
+        lcd_Write_Char('T');
+    } else if (wday == 4) {
+        lcd_Write_Char(1);
+        lcd_Write_Char('T');
+    } else if (wday == 5) {
+        lcd_Write_Char('C');
+        lcd_Write_Char(0);
+    } else if (wday == 6) {
+        lcd_Write_Char('B');
+        lcd_Write_Char('C');
     }
+#else
+    lcd_Set_Cursor_Pos(0, 13);
+    if (wday == 0)
+        lcd_Write_String("MON");
+    else if (wday == 1)
+        lcd_Write_String("TUE");
+    else if (wday == 2)
+        lcd_Write_String("WED");
+    else if (wday == 3)
+        lcd_Write_String("THU");
+    else if (wday == 4)
+        lcd_Write_String("FRI");
+    else if (wday == 5)
+        lcd_Write_String("SAT");
+    else if (wday == 6)
+        lcd_Write_String("SUN");
+#endif
 }
 
 void update_time()
@@ -366,14 +369,25 @@ void update_time()
     else
         return;
     
-    lcd_Write_Char('0' + date.h10);
-    lcd_Write_Char('0' + date.h1);
-    lcd_Write_Char(':');
-    lcd_Write_Char('0' + date.mm10);
-    lcd_Write_Char('0' + date.mm1);
-    lcd_Write_Char(':');
-    lcd_Write_Char('0' + date.s10);
-    lcd_Write_Char('0' + date.s1);
+    if (state == DATE_EDIT) {
+        lcd_Write_Char('0' + new_date.h10);
+        lcd_Write_Char('0' + new_date.h1);
+        lcd_Write_Char(':');
+        lcd_Write_Char('0' + new_date.mm10);
+        lcd_Write_Char('0' + new_date.mm1);
+        lcd_Write_Char(':');
+        lcd_Write_Char('0' + new_date.s10);
+        lcd_Write_Char('0' + new_date.s1);
+    } else {
+        lcd_Write_Char('0' + date.h10);
+        lcd_Write_Char('0' + date.h1);
+        lcd_Write_Char(':');
+        lcd_Write_Char('0' + date.mm10);
+        lcd_Write_Char('0' + date.mm1);
+        lcd_Write_Char(':');
+        lcd_Write_Char('0' + date.s10);
+        lcd_Write_Char('0' + date.s1);
+    }
 }
 
 void update_timer()
@@ -396,11 +410,11 @@ void update_timer()
         lcd_Write_Char('0' + (new_timer.s / 10));
         lcd_Write_Char('0' + (new_timer.s % 10));
     } else {
-        lcd_Write_Char('0' + (new_timer.m / 10));
-        lcd_Write_Char('0' + (new_timer.m % 10));
+        lcd_Write_Char('0' + (timer.m / 10));
+        lcd_Write_Char('0' + (timer.m % 10));
         lcd_Write_Char(':');
-        lcd_Write_Char('0' + (new_timer.s / 10));
-        lcd_Write_Char('0' + (new_timer.s % 10));
+        lcd_Write_Char('0' + (timer.s / 10));
+        lcd_Write_Char('0' + (timer.s % 10));
     }
 }
 
@@ -433,6 +447,7 @@ void update_cursor()
             lcd_Set_Cursor_Pos(1, 10);
         else if (cursor_pos == 12)
             lcd_Set_Cursor_Pos(1, 11);
+        lcd_Cursor_On();
     } else if (state == TIMER_EDIT) {
         if (cursor_pos == 0)
            lcd_Set_Cursor_Pos(1, 5);
@@ -442,6 +457,7 @@ void update_cursor()
             lcd_Set_Cursor_Pos(1, 8);
         else if (cursor_pos == 3)
             lcd_Set_Cursor_Pos(1, 9);
+        lcd_Cursor_On();
     } else {
         lcd_Cursor_Off();
     }
@@ -483,7 +499,11 @@ void show_date_edit_screen()
     lcd_Clear();
     memcpy(&new_date, &date, sizeof(date_time_t));
     update_date();
+    update_week_day();
     update_time();
+
+    cursor_pos = 0;
+    update_cursor();
 }
 
 void show_timer_edit_screen()
@@ -514,7 +534,6 @@ void show_timer_edit_screen()
     memcpy(&new_timer, &timer, sizeof(timer_t));
     update_timer();
     
-    lcd_Cursor_On();
     cursor_pos = 0;
     update_cursor();
 }
@@ -525,6 +544,8 @@ void date_cursor_move(key_t btn)
         cursor_pos = (cursor_pos + 12) % 13;    // -1
     if (btn == DOWN)
         cursor_pos = (cursor_pos + 1) % 13;     // +1
+
+    update_cursor();
 }
 
 void timer_cursor_move(key_t btn)
@@ -533,6 +554,8 @@ void timer_cursor_move(key_t btn)
         cursor_pos = (cursor_pos + 3) % 4;      // -1
     if (btn == DOWN)
         cursor_pos = (cursor_pos + 1) % 4;      // +1
+
+    update_cursor();
 }
 
 void date_cursor_edit(key_t btn)
@@ -567,7 +590,7 @@ void date_cursor_edit(key_t btn)
             if (new_date.h10 < 2)
                 new_date.h1 = (new_date.h1 + 1) % 10;
             else
-                new_date.h1 = (new_date.h1 + 1) % 5;
+                new_date.h1 = (new_date.h1 + 1) % 4;
         } else if (cursor_pos == 9) {   // yyyy-mm-dd hh:Mm:ss w
             new_date.mm10 = (new_date.mm10 + 1) % 6;
         } else if (cursor_pos == 10) {  // yyyy-mm-dd hh:mM:ss w
@@ -607,7 +630,7 @@ void date_cursor_edit(key_t btn)
             if (new_date.h10 < 2)
                 new_date.h1 = (new_date.h1 + 9) % 10;
             else
-                new_date.h1 = (new_date.h1 + 4) % 5;
+                new_date.h1 = (new_date.h1 + 3) % 4;
         } else if (cursor_pos == 9) {   // yyyy-mm-dd hh:Mm:ss w
             new_date.mm10 = (new_date.mm10 + 5) % 6;
         } else if (cursor_pos == 10) {  // yyyy-mm-dd hh:mM:ss w
@@ -618,6 +641,15 @@ void date_cursor_edit(key_t btn)
             new_date.s1 = (new_date.s1 + 9) % 10;
         }
     }
+
+    lcd_Cursor_Off();
+    if (cursor_pos < 6)
+        update_date();
+    else if (cursor_pos == 6)
+        update_week_day();
+    else
+        update_time();
+    update_cursor();
 }
 
 void timer_cursor_edit(key_t btn)
@@ -657,15 +689,20 @@ void timer_cursor_edit(key_t btn)
 
     new_timer.m = m10 * 10 + m1;
     new_timer.s = s10 * 10 + s1;
+
+    lcd_Cursor_Off();
+    update_timer();
+    update_cursor();
 }
 
 void save_date()
 {
     if (valid_date(&new_date)) {
         memcpy(&date, &new_date, sizeof(date_time_t));
+        rtc_Write_Burst(&new_date);
     } else {
         display_error();
-        delay(1000);
+        delay_ms(1000);
     }
 
     state = STOPPED;
@@ -678,7 +715,7 @@ void save_timer()
         memcpy(&timer, &new_timer, sizeof(timer_t));
     } else {
         display_error();
-        delay(1000);
+        delay_ms(1000);
     }
 
     state = STOPPED;
@@ -687,8 +724,11 @@ void save_timer()
 
 void beep_ms(uint16 ms)
 {
+#ifndef MUTE
     BUZZER = 1;
     beep_timer = ms;
+#endif
+    (void) ms;
 }
 
 void beep_short()
@@ -698,17 +738,19 @@ void beep_short()
 
 void beep_long()
 {
-    beep_ms(500);
+    beep_ms(250);
 }
 
 void start_timer()
 {
     backup_timer_enable = 1;
+    RELAY = 0;
 }
 
 void stop_timer()
 {
     backup_timer_enable = 0;
+    RELAY = 1;
 }
 
 void dec_timer()
@@ -716,7 +758,7 @@ void dec_timer()
     if (timer.s)
         timer.s--;
     else {
-        timer.s = 0;
+        timer.s = 59;
         timer.m--;
     }
     
@@ -787,9 +829,19 @@ void on_button_pressed(key_t btn)
             state = DATE_SHOW;
             show_date_screen();
         } else if (btn == START) {
-            state = RUNNING;
-            update_icon();
-            start_timer();
+            if ((timer.m == 0) && (timer.s == 0)) {
+                timer.m = old_timer.m;
+                timer.s = old_timer.s;
+                update_timer();
+            } else {
+                state = RUNNING;
+                update_icon();
+                start_timer();
+            }
+        } else if (btn == STOP) {
+            timer.m = 0;
+            timer.s = 0;
+            update_timer();
         }
         break;
     case RUNNING:
@@ -816,24 +868,19 @@ void on_button_pressed(key_t btn)
             show_main_screen();
         } else if ((btn == UP) || (btn == DOWN)) {
             timer_cursor_move(btn);
-            update_cursor();
         } else if ((btn == RIGHT) || (btn == LEFT)) {
             timer_cursor_edit(btn);
-            new_timer.m = 23;
-            new_timer.s = 56;
-            update_timer();
-            update_cursor();
         } else if (btn == OK) {
             save_timer();
         }
         break;
     case DATE_SHOW:
-        if (btn == STOP) {
-            state = STOPPED;
-            show_main_screen();
-        } else if (btn == OK) {
+        if (btn == OK) {
             state = DATE_EDIT;
             show_date_edit_screen();
+        } else {
+            state = STOPPED;
+            show_main_screen();
         }
         break;
     case DATE_EDIT:
@@ -842,11 +889,8 @@ void on_button_pressed(key_t btn)
             show_main_screen();
         } else if ((btn == UP) || (btn == DOWN)) {
             date_cursor_move(btn);
-            update_cursor();
         } else if ((btn == RIGHT) || (btn == LEFT)) {
             date_cursor_edit(btn);
-            update_date();
-            update_cursor();
         } else if (btn == OK) {
             save_date();
         }
@@ -858,6 +902,8 @@ void on_button_pressed(key_t btn)
 
 void main()
 {
+    static date_time_t tmp_date;
+
     TMOD = 0x01;
     TL0 = T1MS;
     TH0 = T1MS >> 8;
@@ -866,16 +912,42 @@ void main()
     EA = 1;
     
     lcd_Init();
+    rtc_Init();
     
     display_logo();
-    delay(2000);
+    delay_ms(2000);
+
+    LED_CONST = 0;
+
+    P3M1 |= (1 << 4);
+    BUZZER = 0;
     
-    default_date(&date);
+
     default_timer(&timer);
     default_timer(&old_timer);
+
+    rtc_Read_Burst(&date);
+    if (!valid_date(&date))
+        default_date(&date);
     
     state = STOPPED;
     show_main_screen();
+
+//    default_date(&tmp_date);
+//    rtc_Write_Burst(&tmp_date);
+//    delay_ms(500);
+
+//    rtc_Read_Burst(&date);
+//    update_date();
+//    update_time();
+//    rtc_Write_Direct(DS_CTRL, 0x00);
+//    delay_ms(2000);
+//    rtc_Read_Burst(&date);
+//    update_date();
+//    update_time();
+
+//    while (1) {
+//    }
     
     while (1) {
         if (scan_keyboard_request) {
@@ -894,6 +966,17 @@ void main()
             dec_timer();
             update_timer();
         }
+
+        if (read_date_request) {
+            read_date_request = 0;
+            rtc_Write_Direct(DS_CTRL, 0x00);
+            rtc_Read_Burst(&tmp_date);
+            //if (valid_date(&tmp_date))
+                memcpy(&date, &tmp_date, sizeof(date_time_t));
+
+            update_date();
+            update_time();
+        }
     }
 }
 
@@ -904,11 +987,14 @@ void timer0_ISR() interrupt 1
     
     if (timer_scaler++ >= 1000) {
         timer_scaler = 0;
-        LED_BLINKER = !LED_BLINKER;
+        LED_BLINK = !LED_BLINK;
         
         if (backup_timer_enable)
             dec_timer_request = 1;
     }
+
+    if ((timer_scaler & 0x03FF) == 0)
+        read_date_request = 1;
     
     if (delay_timer)
         delay_timer--;

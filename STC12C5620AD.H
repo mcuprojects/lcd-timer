@@ -95,7 +95,6 @@ Modification according to DataSheet from April 1999
 --------------------------------------------------------------------------*/
 
 /*  BYTE Registers  */
-sfr at (0xE0) ACC;
 sfr at (0xF0) B;
 sfr at (0x81) SP;
 sfr at (0x82) DPL;
@@ -107,6 +106,17 @@ sfr at (0x8B) TL1;
 sfr at (0x8C) TH0;
 sfr at (0x8D) TH1;
 sfr at (0x99) SBUF;
+
+/*  ACC  */
+sfr at (0xE0) ACC;
+sbit at (0xE0) ACC_0;
+sbit at (0xE1) ACC_1;
+sbit at (0xE2) ACC_2;
+sbit at (0xE3) ACC_3;
+sbit at (0xE4) ACC_4;
+sbit at (0xE5) ACC_5;
+sbit at (0xE6) ACC_6;
+sbit at (0xE7) ACC_7;
 
 /*  GPIO pins  */
 /*  P0  */
