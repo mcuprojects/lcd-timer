@@ -71,6 +71,8 @@ typedef struct {
 
 const uint8 code days_in_month[12] = {31, 29, 31, 20, 31, 30, 31, 31, 30, 31, 30, 31};
 
+#define EEPROM_MAGIC 0xDE
+
 uint16 timer_scaler = 0;
 uint16 delay_timer = 0;
 uint16 beep_timer = 0;
@@ -78,6 +80,7 @@ bool scan_keyboard_request = 0;
 bool dec_timer_request = 0;
 bool read_date_request = 0;
 bool backup_timer_enable = 0;
+bool timer_enable = 0;
 uint8 cursor_pos = 0;
 
 state_t state = UNDEFINED;
@@ -87,6 +90,7 @@ key_t prev_key = NONE;
 date_time_t idata date;
 timer_t idata timer;
 timer_t idata old_timer;
+uint16 idata timer_offset;
 
 date_time_t idata new_date;
 timer_t idata new_timer;
@@ -711,8 +715,20 @@ void save_date()
 
 void save_timer()
 {
+    ISP_CONTR = 0;
+    ISP_CMD = 0;
+    ISP_TRIG = 0;
+    ISP_ADDRH = 0;
+    ISP_ADDRL = 0;
+
     if (valid_timer(&new_timer)) {
         memcpy(&timer, &new_timer, sizeof(timer_t));
+
+        rtc_Write_Direct(0xC0, EEPROM_MAGIC);
+        delay_ms(1);
+        rtc_Write_Direct(0xC2, timer.m);
+        delay_ms(1);
+        rtc_Write_Direct(0xC4, timer.s);
     } else {
         display_error();
         delay_ms(1000);
@@ -720,6 +736,22 @@ void save_timer()
 
     state = STOPPED;
     show_main_screen();
+}
+
+void load_timer(timer_t *t)
+{
+    uint8 magic;
+
+    rtc_Write_Direct(DS_CTRL, 0x00);
+    magic = rtc_Read_Direct(0xC0);
+    if (magic == EEPROM_MAGIC) {
+        rtc_Write_Direct(DS_CTRL, 0x00);
+        t->m = rtc_Read_Direct(0xC2);
+        rtc_Write_Direct(DS_CTRL, 0x00);
+        t->s = rtc_Read_Direct(0xC4);
+    } else {
+        default_timer(t);
+    }
 }
 
 void beep_ms(uint16 ms)
@@ -743,13 +775,19 @@ void beep_long()
 
 void start_timer()
 {
-    backup_timer_enable = 1;
+    //backup_timer_enable = 1;
+    timer_enable = 1;
+
+    timer_offset = timer_scaler;
+
     RELAY = 0;
 }
 
 void stop_timer()
 {
     backup_timer_enable = 0;
+    timer_enable = 0;
+
     RELAY = 1;
 }
 
@@ -842,6 +880,8 @@ void on_button_pressed(key_t btn)
             timer.m = 0;
             timer.s = 0;
             update_timer();
+
+            rtc_Init();
         }
         break;
     case RUNNING:
@@ -903,6 +943,7 @@ void on_button_pressed(key_t btn)
 void main()
 {
     static date_time_t tmp_date;
+    uint8 a, b, c;
 
     TMOD = 0x01;
     TL0 = T1MS;
@@ -913,6 +954,12 @@ void main()
     
     lcd_Init();
     rtc_Init();
+
+    //delay_ms(15);
+    //rtc_Write_Direct(0xC0, 0xee);
+//    delay_ms(30);
+//    a = 3;
+//    a = rtc_Read_Direct(0xC0);
     
     display_logo();
     delay_ms(2000);
@@ -924,6 +971,7 @@ void main()
     
 
     default_timer(&timer);
+    load_timer(&timer);
     default_timer(&old_timer);
 
     rtc_Read_Burst(&date);
@@ -933,21 +981,13 @@ void main()
     state = STOPPED;
     show_main_screen();
 
-//    default_date(&tmp_date);
-//    rtc_Write_Burst(&tmp_date);
-//    delay_ms(500);
-
-//    rtc_Read_Burst(&date);
-//    update_date();
-//    update_time();
-//    rtc_Write_Direct(DS_CTRL, 0x00);
-//    delay_ms(2000);
-//    rtc_Read_Burst(&date);
-//    update_date();
-//    update_time();
-
-//    while (1) {
-//    }
+    //b = rtc_Read_Direct(0xC2);
+    //c = rtc_Read_Direct(0xC4);
+//    b = 1;
+//    c = 2;
+    //lcd_Clear();
+//    lcd_Set_Cursor_Pos(1, 0);
+//    lcd_printf("0x%02x 0x%02x 0x%02x", a, b, c);
     
     while (1) {
         if (scan_keyboard_request) {
@@ -967,15 +1007,20 @@ void main()
             update_timer();
         }
 
-        if (read_date_request) {
-            read_date_request = 0;
-            rtc_Write_Direct(DS_CTRL, 0x00);
-            rtc_Read_Burst(&tmp_date);
-            //if (valid_date(&tmp_date))
-                memcpy(&date, &tmp_date, sizeof(date_time_t));
+        if ((state == STOPPED) || \
+            (state == RUNNING) || \
+            (state == PAUSED) || \
+            (state == DATE_SHOW)) {
+            if (read_date_request) {
+                read_date_request = 0;
+                rtc_Write_Direct(DS_CTRL, 0x00);
+                rtc_Read_Burst(&tmp_date);
+                if (valid_date(&tmp_date))
+                    memcpy(&date, &tmp_date, sizeof(date_time_t));
 
-            update_date();
-            update_time();
+                update_date();
+                update_time();
+            }
         }
     }
 }
@@ -984,6 +1029,11 @@ void timer0_ISR() interrupt 1
 {
     TL0 = T1MS;
     TH0 = T1MS >> 8;
+
+    if (timer_enable) {
+        if (timer_scaler == timer_offset)
+            dec_timer_request = 1;
+    }
     
     if (timer_scaler++ >= 1000) {
         timer_scaler = 0;
@@ -993,7 +1043,7 @@ void timer0_ISR() interrupt 1
             dec_timer_request = 1;
     }
 
-    if ((timer_scaler & 0x03FF) == 0)
+    if ((timer_scaler & 0x00FF) == 0)
         read_date_request = 1;
     
     if (delay_timer)
